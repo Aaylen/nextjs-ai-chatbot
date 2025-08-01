@@ -108,6 +108,8 @@ function PureMultimodalInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
   const [isTextareaFocused, setIsTextareaFocused] = useState<boolean>(false);
+  const [isEnhanceModeActive, setIsEnhanceModeActive] =
+    useState<boolean>(false);
 
   const handleFocus = () => {
     setIsTextareaFocused(true);
@@ -115,6 +117,23 @@ function PureMultimodalInput({
 
   const handleBlur = () => {
     setIsTextareaFocused(false);
+  };
+
+  // Reset enhance mode when textarea loses focus
+  useEffect(() => {
+    if (!isTextareaFocused) {
+      setIsEnhanceModeActive(false);
+    }
+  }, [isTextareaFocused]);
+
+  const handleEnhancePromptClick = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsEnhanceModeActive(!isEnhanceModeActive);
+    // Keep the textarea focused
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   const submitForm = useCallback(() => {
@@ -218,6 +237,14 @@ function PureMultimodalInput({
 
   return (
     <div className="relative w-full flex flex-col gap-4">
+      <style jsx global>{`
+        @keyframes rainbow {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+      `}</style>
+
       <AnimatePresence>
         {!isAtBottom && (
           <motion.div
@@ -287,9 +314,49 @@ function PureMultimodalInput({
 
       <div className="flex flex-col">
         {isTextareaFocused && (
-          <div className="relative bg-blue-100 rounded-t-2xl px-3 py-1.5 text-sm text-blue-800 w-fit ml-2.5 overflow-hidden z-9">
+          <button
+            className={cx(
+              "relative rounded-t-2xl px-3 py-1.5 text-sm w-fit ml-3 overflow-hidden z-9 cursor-pointer transition-colors border border-black",
+              isEnhanceModeActive
+          ? "bg-white text-black hover:bg-zinc-100"
+          : "bg-blue-100 text-blue-800 hover:bg-blue-200"
+            )}
+            onClick={handleEnhancePromptClick}
+            onMouseDown={(e) => e.preventDefault()} // Prevent losing focus
+            type="button"
+          >
             <div
-              className="absolute inset-0 rounded-t-2xl p-[2px] animate-pulse"
+              className={cx(
+          "absolute inset-0 rounded-t-2xl p-[2px]",
+          !isEnhanceModeActive && "animate-pulse"
+              )}
+              style={
+          isEnhanceModeActive
+            ? { background: "white", border: "1px solid black" }
+            : {
+                background:
+            "linear-gradient(45deg, #b91c1c, #ca8a04, #16a34a, #2563eb, #7c3aed, #db2777, #b91c1c)",
+                backgroundSize: "400% 400%",
+                animation: "rainbow 3s ease infinite",
+              }
+              }
+            >
+              <div
+          className={cx(
+            "h-full w-full rounded-t-2xl",
+            isEnhanceModeActive ? "bg-white" : "bg-blue-100"
+          )}
+              />
+            </div>
+            <div className="relative z-9">
+              {isEnhanceModeActive ? "Original Prompt" : "Enhance Prompt"}
+            </div>
+          </button>
+        )}
+        <div className="relative">
+          {isEnhanceModeActive && (
+            <div
+              className="absolute inset-0 rounded-2xl p-[4px] pointer-events-none z-9"
               style={{
                 background:
                   'linear-gradient(45deg, #b91c1c, #ca8a04, #16a34a, #2563eb, #7c3aed, #db2777, #b91c1c)',
@@ -297,50 +364,61 @@ function PureMultimodalInput({
                 animation: 'rainbow 3s ease infinite',
               }}
             >
-              <div className="h-full w-full rounded-t-2xl bg-blue-100" />
+              <div className="h-full w-full rounded-2xl bg-muted" />
             </div>
-            <div className="relative z-10">Enhanced Prompt</div>
-            <style jsx>{`
-              @keyframes rainbow {
-                0% { background-position: 0% 50%; }
-                50% { background-position: 100% 50%; }
-                100% { background-position: 0% 50%; }
-              }
-            `}</style>
-          </div>
-        )}
-        <Textarea
-          data-testid="multimodal-input"
-          ref={textareaRef}
-          placeholder="Send a message..."
-          value={input}
-          onChange={handleInput}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          className={cx(
-            'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700 relative ',
-            className,
           )}
-          rows={2}
-          autoFocus
-          onKeyDown={(event) => {
-            if (
-              event.key === 'Enter' &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
-              event.preventDefault();
-
-              if (status !== 'ready') {
-                toast.error(
-                  'Please wait for the model to finish its response!',
-                );
-              } else {
-                submitForm();
-              }
+          <div
+            style={
+              isEnhanceModeActive && isTextareaFocused
+                ? {
+                    background:
+                      'linear-gradient(45deg, #b91c1c, #ca8a04, #16a34a, #2563eb, #7c3aed, #db2777, #b91c1c)',
+                    backgroundSize: '400% 400%',
+                    animation: 'rainbow 3s ease infinite',
+                    borderRadius: '1rem', // match rounded-2xl
+                    padding: '6px', // add a little padding
+                  }
+                : undefined
             }
-          }}
-        />
+          >
+            <Textarea
+              data-testid="multimodal-input"
+              ref={textareaRef}
+              placeholder="Send a message..."
+              value={input}
+              onChange={handleInput}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              className={cx(
+                'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base pb-10 relative z-9',
+                isEnhanceModeActive
+                  ? ''
+                  : 'focus-visible:ring-2',
+                className,
+              )}
+
+              rows={2}
+              autoFocus
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+
+                  if (status !== 'ready') {
+                    toast.error(
+                      'Please wait for the model to finish its response!',
+                    );
+                  } else {
+                    submitForm();
+                  }
+                }
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
