@@ -107,6 +107,15 @@ function PureMultimodalInput({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
+  const [isTextareaFocused, setIsTextareaFocused] = useState<boolean>(false);
+
+  const handleFocus = () => {
+    setIsTextareaFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsTextareaFocused(false);
+  };
 
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
@@ -276,34 +285,63 @@ function PureMultimodalInput({
         </div>
       )}
 
-      <Textarea
-        data-testid="multimodal-input"
-        ref={textareaRef}
-        placeholder="Send a message..."
-        value={input}
-        onChange={handleInput}
-        className={cx(
-          'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700',
-          className,
+      <div className="flex flex-col">
+        {isTextareaFocused && (
+          <div className="relative bg-blue-100 rounded-t-2xl px-3 py-1.5 text-sm text-blue-800 w-fit ml-2.5 overflow-hidden z-9">
+            <div
+              className="absolute inset-0 rounded-t-2xl p-[2px] animate-pulse"
+              style={{
+                background:
+                  'linear-gradient(45deg, #b91c1c, #ca8a04, #16a34a, #2563eb, #7c3aed, #db2777, #b91c1c)',
+                backgroundSize: '400% 400%',
+                animation: 'rainbow 3s ease infinite',
+              }}
+            >
+              <div className="h-full w-full rounded-t-2xl bg-blue-100" />
+            </div>
+            <div className="relative z-10">Enhanced Prompt</div>
+            <style jsx>{`
+              @keyframes rainbow {
+                0% { background-position: 0% 50%; }
+                50% { background-position: 100% 50%; }
+                100% { background-position: 0% 50%; }
+              }
+            `}</style>
+          </div>
         )}
-        rows={2}
-        autoFocus
-        onKeyDown={(event) => {
-          if (
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
-            event.preventDefault();
+        <Textarea
+          data-testid="multimodal-input"
+          ref={textareaRef}
+          placeholder="Send a message..."
+          value={input}
+          onChange={handleInput}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          className={cx(
+            'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700 relative ',
+            className,
+          )}
+          rows={2}
+          autoFocus
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
 
-            if (status !== 'ready') {
-              toast.error('Please wait for the model to finish its response!');
-            } else {
-              submitForm();
+              if (status !== 'ready') {
+                toast.error(
+                  'Please wait for the model to finish its response!',
+                );
+              } else {
+                submitForm();
+              }
             }
-          }
-        }}
-      />
+          }}
+        />
+      </div>
 
       <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
         <AttachmentsButton fileInputRef={fileInputRef} status={status} />
