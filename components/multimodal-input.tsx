@@ -25,6 +25,7 @@ import type { UseChatHelpers } from '@ai-sdk/react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
 import type { Attachment, ChatMessage } from '@/lib/types';
+import { set } from 'date-fns';
 
 function PureMultimodalInput({
   chatId,
@@ -219,7 +220,8 @@ function PureMultimodalInput({
       // Set new timer for auto-enhancement
       const newTimer = setTimeout(() => {
         const currentValue = currentInputRef.current;
-        const previousValue = cachedEnhancedPrompt;
+        const previousValue = previousInputForAutocomplete;
+        console.log('Previous value:', previousValue);
         // Only enhance if there's meaningful content and we're still in enhance mode
         if (currentValue.trim() && currentValue.length > 10) {
           enhancePrompt(currentValue, 'auto', previousValue);
@@ -399,7 +401,7 @@ function PureMultimodalInput({
         body: JSON.stringify({
           prompt: promptText,
           enhancementType,
-          previousPrompt: previousText || '',
+          previousEnhancedPrompt: previousText || 'heheheheheh',
           cursorPosition,
         }),
       });
@@ -464,7 +466,7 @@ function PureMultimodalInput({
         let finalText = enhancedText.trim();
 
         // Remove surrounding quotes
-        finalText = finalText.replace(/^["']|["']$/g, '');
+        finalText = finalText.replace(/^['"]|['"]$/g, '');
 
         // Remove common prefixes that might appear at the start
         finalText = finalText.replace(
@@ -474,6 +476,10 @@ function PureMultimodalInput({
 
         // Clean up excessive whitespace but preserve line breaks and formatting
         finalText = finalText.replace(/[ \t]+/g, ' ').trim();
+
+        // Set previousInputForAutocomplete to the final enhanced text
+        setPreviousInputForAutocomplete(finalText);
+        console.log('Set previousInputForAutocomplete to:', finalText);
 
         if (enhancementType === 'auto') {
           // For autocomplete, only update after streaming is complete
