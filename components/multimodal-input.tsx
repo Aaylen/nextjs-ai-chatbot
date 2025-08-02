@@ -118,6 +118,11 @@ function PureMultimodalInput({
       const finalValue = domValue || localStorageInput || '';
       setInput(finalValue);
       adjustHeight();
+
+      // Check if textarea is already focused (e.g. after page refresh)
+      if (document.activeElement === textareaRef.current) {
+        setIsTextareaFocused(true);
+      }
     }
     // Only run once after hydration
     // eslint-disable-next-line react-hooks/exhaustive-deps
