@@ -25,7 +25,6 @@ import type { UseChatHelpers } from '@ai-sdk/react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
 import type { Attachment, ChatMessage } from '@/lib/types';
-import { set } from 'date-fns';
 
 function PureMultimodalInput({
   chatId,

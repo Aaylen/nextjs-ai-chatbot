@@ -7,7 +7,10 @@ import { CodeBlock } from './code-block';
 const components: Partial<Components> = {
   // @ts-expect-error
   code: CodeBlock,
-  pre: ({ children }) => <>{children}</>,
+  pre: ({ children, ...props }) => {
+    // Return the code block directly to avoid wrapping in additional elements
+    return <div className="not-prose">{children}</div>;
+  },
   ol: ({ node, children, ...props }) => {
     return (
       <ol className="list-decimal list-outside ml-4" {...props}>
