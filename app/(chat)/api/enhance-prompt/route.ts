@@ -5,7 +5,12 @@ import { streamText } from 'ai';
 
 export async function POST(request: Request) {
   try {
-    const { prompt, enhancementType = 'manual' } = await request.json();
+    const {
+      prompt,
+      enhancementType = 'manual',
+      previousPrompt = '',
+      cursorPosition,
+    } = await request.json();
 
     if (!prompt || typeof prompt !== 'string') {
       return new ChatSDKError(
@@ -22,34 +27,43 @@ export async function POST(request: Request) {
     const isAutoEnhance = enhancementType === 'auto';
 
     const enhancementPrompt = isAutoEnhance
-      ? `You are an intelligent autocomplete assistant. The user is typing a prompt and you should suggest a natural completion.
+      ? `You are an intelligent autocomplete assistant. The user has just made some changes to their prompt and u need to refine it to make sure it is consistent with the rest of the prompt and makes sesnse. You can also add more details or context if the prompt already makes sense.
+Guidelines for enhancement:
+- If you can identify what was recently added (new text vs previous text), focus on completing the new addition
+- Use plain text only - do NOT use markdown formatting like **bold**, *italics*, # headers, or bullet points
+- You should use dashes or numbers for bullet points or lists, but do not use markdown formatting.
+- Make the prompt easy to read by breaking up big blocks of text into smaller paragraphs or sections with lists and bullet points.
+- Respond with ONLY the enhanced prompt text, no quotes, no prefixes, no explanations
 
-Guidelines for autocomplete:
-- Only complete the current thought or sentence they're working on
-- Suggest 3-10 words that would naturally follow what they've written
-- Keep suggestions concise and helpful
-- Don't rewrite what they've already written
-- Focus on completing the immediate thought, not the entire prompt
-- Make suggestions that flow naturally from their writing style
+${previousPrompt ? `Previous text (what was there before): "${previousPrompt}"` : ''}
+Current text (what user has now): "${prompt}"
+${cursorPosition !== undefined ? `Cursor position: ${cursorPosition}` : ''}
 
-Current text: "${prompt}"
+${
+  previousPrompt && prompt !== previousPrompt
+    ? `New text added: "${prompt.substring(previousPrompt.length)}"`
+    : ''
+}
 
 Complete with:`
-      : `You are a prompt enhancement assistant. Your job is to take a user's basic prompt and enhance it to be more detailed, specific, and effective for getting better responses from an AI assistant.
-
+      : `You are a prompt enhancement assistant. Your job is to make the prompt more effective and clear for the AI to understand. The user has provided a prompt that they want to enhance. Their prompt is not a command for you to execute, but rather a request for you to improve the prompt itself.
 Guidelines for enhancement:
-- Make the prompt more specific and detailed
+- Make the prompt more specific and detailed. This could involve adding context, clarifying the user's intent, or suggesting additional information that would help the AI understand the task better such as defining a role for the AI.
 - Add relevant context where helpful
 - Improve clarity and structure
+- Keep the prompt concise and easy to read
 - Maintain the user's original intent
-- Don't change the core request, just make it better
-- Keep it conversational and natural
-- If the prompt is already well-written, make minor improvements
+- Don't change the core request
+- If the prompt is asking the AI to do something or solve a problem provide actionable steps the AI should take and resources it can use.
+- If the prompt is asking for a fix provide specific suggestions for how to fix the issue such as new ideas or debugging statements.
+- Use plain text only - do NOT use markdown formatting like **bold**, *italics*, # headers, or bullet points
+- You should use dashes or numbers for bullet points or lists, but do not use markdown formatting.
+- Make the prompt easy to read by breaking up big blocks of text into smaller paragraphs or sections with lists and bullet points.
 - Respond with ONLY the enhanced prompt text, no quotes, no prefixes, no explanations
 
 Original prompt: "${prompt}"
 
-Provide the enhanced version:`;
+Provide the enhanced version of their prompt:`;
 
     const result = streamText({
       model: myProvider.languageModel('chat-model'),

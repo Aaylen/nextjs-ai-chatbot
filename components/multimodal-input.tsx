@@ -20,7 +20,6 @@ import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
-import { SuggestedActions } from './suggested-actions';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
@@ -71,6 +70,10 @@ function PureMultimodalInput({
     useState<string>('');
   const [isShowingSuggestion, setIsShowingSuggestion] =
     useState<boolean>(false);
+  const [previousInputForAutocomplete, setPreviousInputForAutocomplete] =
+    useState<string>('');
+  const [originalInputBeforeAutocomplete, setOriginalInputBeforeAutocomplete] =
+    useState<string>('');
   const currentInputRef = useRef<string>('');
   const [textareaHeight, setTextareaHeight] = useState<number>(98);
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -86,7 +89,7 @@ function PureMultimodalInput({
     }
   }, []);
 
-  const adjustHeight = () => {
+  const adjustHeight = useCallback(() => {
     if (textareaRef.current) {
       // Don't auto-adjust height when user is manually resizing
       if (!isResizing) {
@@ -98,7 +101,7 @@ function PureMultimodalInput({
         textareaRef.current.style.height = `${newHeight}px`;
       }
     }
-  };
+  }, [textareaHeight, isResizing]);
 
   const resetHeight = () => {
     setTextareaHeight(98);
@@ -176,6 +179,10 @@ function PureMultimodalInput({
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = event.target.value;
+
+    // Store the result of the enhanced prompt for autocomplete context
+    setPreviousInputForAutocomplete(cachedEnhancedPrompt);
+
     setInput(newValue);
     adjustHeight();
 
@@ -199,15 +206,11 @@ function PureMultimodalInput({
     if (isShowingSuggestion) {
       setIsShowingSuggestion(false);
       setAutocompleteSuggestion('');
+      setOriginalInputBeforeAutocomplete('');
     }
 
     // Handle auto-enhancement when in enhance mode
     if (isEnhanceModeActive && !isEnhancing && newValue.trim()) {
-      console.log(
-        'Setting up auto-enhance timer for:',
-        newValue.substring(0, 50),
-      );
-
       // Clear existing timer
       if (autoEnhanceTimer) {
         clearTimeout(autoEnhanceTimer);
@@ -216,19 +219,43 @@ function PureMultimodalInput({
       // Set new timer for auto-enhancement
       const newTimer = setTimeout(() => {
         const currentValue = currentInputRef.current;
-        console.log(
-          'Auto-enhance timer fired, current value:',
-          currentValue.substring(0, 50),
-        );
+        const previousValue = cachedEnhancedPrompt;
         // Only enhance if there's meaningful content and we're still in enhance mode
         if (currentValue.trim() && currentValue.length > 10) {
-          enhancePrompt(currentValue, 'auto');
+          enhancePrompt(currentValue, 'auto', previousValue);
         }
       }, 2000);
 
       setAutoEnhanceTimer(newTimer);
     }
   };
+
+  const acceptAutocompleteSuggestion = useCallback(() => {
+    if (isShowingSuggestion && autocompleteSuggestion) {
+      // The input is already set to the suggestion, just clear the suggestion state
+      setIsShowingSuggestion(false);
+      setAutocompleteSuggestion('');
+      setOriginalInputBeforeAutocomplete('');
+      setOriginalInput(autocompleteSuggestion); // Update the original input to match the accepted suggestion
+      adjustHeight();
+
+      // Ensure the text area retains focus
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }
+  }, [autocompleteSuggestion, isShowingSuggestion, adjustHeight]);
+
+  const revertAutocompleteSuggestion = useCallback(() => {
+    if (isShowingSuggestion && originalInputBeforeAutocomplete) {
+      // Restore the original input
+      setInput(originalInputBeforeAutocomplete);
+      setIsShowingSuggestion(false);
+      setAutocompleteSuggestion('');
+      setOriginalInputBeforeAutocomplete('');
+      adjustHeight();
+    }
+  }, [originalInputBeforeAutocomplete, isShowingSuggestion, adjustHeight]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Handle Tab or Right Arrow to accept autocomplete suggestion
@@ -238,18 +265,13 @@ function PureMultimodalInput({
       autocompleteSuggestion
     ) {
       event.preventDefault();
-      const newValue = `${input}${autocompleteSuggestion}`;
-      setInput(newValue);
-      setIsShowingSuggestion(false);
-      setAutocompleteSuggestion('');
-      adjustHeight();
+      acceptAutocompleteSuggestion();
       return;
     }
 
     // Handle Escape to dismiss suggestion
     if (event.key === 'Escape' && isShowingSuggestion) {
-      setIsShowingSuggestion(false);
-      setAutocompleteSuggestion('');
+      revertAutocompleteSuggestion();
       return;
     }
 
@@ -277,17 +299,61 @@ function PureMultimodalInput({
     setIsTextareaFocused(false);
   };
 
-  // Reset enhance mode when textarea loses focus
+  // Handle focus state changes and update text accordingly
   useEffect(() => {
-    if (!isTextareaFocused) {
-      setIsEnhanceModeActive(false);
-      // Clear any pending auto-enhancement
-      if (autoEnhanceTimer) {
-        clearTimeout(autoEnhanceTimer);
-        setAutoEnhanceTimer(null);
+    if (isTextareaFocused) {
+      // When gaining focus, show appropriate text based on enhance mode
+      if (
+        isEnhanceModeActive &&
+        cachedEnhancedPrompt &&
+        input !== cachedEnhancedPrompt
+      ) {
+        setInput(cachedEnhancedPrompt);
+        setTimeout(() => adjustHeight(), 10);
+      } else if (
+        !isEnhanceModeActive &&
+        originalInput &&
+        input !== originalInput
+      ) {
+        setInput(originalInput);
+        setTimeout(() => adjustHeight(), 10);
+      }
+    } else {
+      // When losing focus, if enhance mode is active, turn it off and show original
+      if (isEnhanceModeActive) {
+        // Save the current enhanced prompt before switching back
+        setCachedEnhancedPrompt(input);
+        setIsEnhanceModeActive(false);
+        // Clear any pending auto-enhancement
+        if (autoEnhanceTimer) {
+          clearTimeout(autoEnhanceTimer);
+          setAutoEnhanceTimer(null);
+        }
+        // The text switch will be handled by the enhance mode useEffect
       }
     }
-  }, [isTextareaFocused, autoEnhanceTimer]);
+  }, [isTextareaFocused, isEnhanceModeActive]);
+
+  // Handle enhance mode text switching
+  useEffect(() => {
+    if (
+      isEnhanceModeActive &&
+      cachedEnhancedPrompt &&
+      input !== cachedEnhancedPrompt
+    ) {
+      // When entering enhance mode, show cached enhanced prompt if available
+      setInput(cachedEnhancedPrompt);
+      setTimeout(() => adjustHeight(), 10);
+    } else if (
+      !isEnhanceModeActive &&
+      originalInput &&
+      input !== originalInput
+    ) {
+      // When exiting enhance mode, always show original prompt
+      setInput(originalInput);
+      setTimeout(() => adjustHeight(), 10);
+    }
+  }, [isEnhanceModeActive, cachedEnhancedPrompt, originalInput]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -301,6 +367,7 @@ function PureMultimodalInput({
   const enhancePrompt = async (
     promptText: string,
     enhancementType: 'manual' | 'auto' = 'manual',
+    previousText?: string,
   ) => {
     console.log(
       `Starting ${enhancementType} enhancement for:`,
@@ -318,6 +385,12 @@ function PureMultimodalInput({
     }
 
     try {
+      // Get cursor position for autocomplete
+      const cursorPosition =
+        enhancementType === 'auto' && textareaRef.current
+          ? textareaRef.current.selectionStart
+          : undefined;
+
       const response = await fetch('/api/enhance-prompt', {
         method: 'POST',
         headers: {
@@ -326,6 +399,8 @@ function PureMultimodalInput({
         body: JSON.stringify({
           prompt: promptText,
           enhancementType,
+          previousPrompt: previousText || '',
+          cursorPosition,
         }),
       });
 
@@ -367,25 +442,23 @@ function PureMultimodalInput({
 
                   enhancedText += cleanContent;
 
-                  if (enhancementType === 'auto') {
-                    // For autocomplete, show as suggestion
-                    setAutocompleteSuggestion(enhancedText.trim());
-                    setIsShowingSuggestion(true);
-                  } else {
+                  if (enhancementType === 'manual') {
                     // For manual enhancement, stream into textarea
                     setInput(enhancedText);
                     adjustHeight();
                   }
+                  // For auto enhancement, we'll wait until complete before updating
                 }
               } catch (e) {
-                // Skip invalid JSON
+                console.error('Error parsing enhancement data:', e);
               }
             }
           }
         }
       }
 
-      // Final cleanup after streaming is complete
+      console.log('Enhanced text:', enhancedText);
+
       if (enhancedText) {
         // Remove any remaining unwanted formatting but preserve markdown
         let finalText = enhancedText.trim();
@@ -403,8 +476,12 @@ function PureMultimodalInput({
         finalText = finalText.replace(/[ \t]+/g, ' ').trim();
 
         if (enhancementType === 'auto') {
+          // For autocomplete, only update after streaming is complete
+          setOriginalInputBeforeAutocomplete(previousInput);
+          setInput(finalText);
           setAutocompleteSuggestion(finalText);
-          setIsShowingSuggestion(true);
+          setIsShowingSuggestion(finalText !== previousInput); // Only show if different
+          adjustHeight();
         } else {
           setInput(finalText);
           // Cache the enhanced prompt for manual enhancements
@@ -477,6 +554,11 @@ function PureMultimodalInput({
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
+    const promptToSubmit =
+      isEnhanceModeActive && cachedEnhancedPrompt
+        ? cachedEnhancedPrompt
+        : input;
+
     sendMessage({
       role: 'user',
       parts: [
@@ -488,7 +570,7 @@ function PureMultimodalInput({
         })),
         {
           type: 'text',
-          text: input,
+          text: promptToSubmit,
         },
       ],
     });
@@ -502,6 +584,8 @@ function PureMultimodalInput({
     setCachedEnhancedPrompt(''); // Clear cached enhanced prompt
     setIsShowingSuggestion(false); // Clear autocomplete
     setAutocompleteSuggestion(''); // Clear autocomplete suggestion
+    setPreviousInputForAutocomplete(''); // Clear previous input for autocomplete
+    setOriginalInputBeforeAutocomplete(''); // Clear original input before autocomplete
 
     // Clear any pending auto-enhancement timer
     if (autoEnhanceTimer) {
@@ -522,6 +606,8 @@ function PureMultimodalInput({
     width,
     chatId,
     autoEnhanceTimer,
+    isEnhanceModeActive,
+    cachedEnhancedPrompt,
   ]);
 
   const uploadFile = async (file: File) => {
@@ -568,13 +654,18 @@ function PureMultimodalInput({
           ...currentAttachments,
           ...successfullyUploadedAttachments,
         ]);
+
+        // Ensure the enhanced prompt is preserved after file uploads
+        if (isEnhanceModeActive && cachedEnhancedPrompt) {
+          setInput(cachedEnhancedPrompt);
+        }
       } catch (error) {
         console.error('Error uploading files!', error);
       } finally {
         setUploadQueue([]);
       }
     },
-    [setAttachments],
+    [setAttachments, isEnhanceModeActive, cachedEnhancedPrompt, setInput],
   );
 
   const { isAtBottom, scrollToBottom } = useScrollToBottom();
@@ -594,16 +685,6 @@ function PureMultimodalInput({
           100% { background-position: 0% 50%; }
         }
       `}</style>
-
-      {messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
-          <SuggestedActions
-            sendMessage={sendMessage}
-            chatId={chatId}
-            selectedVisibilityType={selectedVisibilityType}
-          />
-        )}
 
       <input
         type="file"
@@ -714,28 +795,6 @@ function PureMultimodalInput({
             }
             className="relative"
           >
-            {/* Autocomplete suggestion overlay */}
-            {isShowingSuggestion && autocompleteSuggestion && (
-              <div className="absolute inset-0 pointer-events-none z-10">
-                <div
-                  className="min-h-[24px] w-full rounded-2xl px-3 py-2 text-base pb-10 whitespace-pre-wrap overflow-hidden resize-none"
-                  style={{
-                    fontFamily: 'inherit',
-                    fontSize: 'inherit',
-                    lineHeight: 'inherit',
-                    color: 'transparent',
-                  }}
-                >
-                  {input}
-                  <span
-                    className="text-gray-400 opacity-60"
-                    style={{ color: 'rgb(156, 163, 175, 0.6)' }}
-                  >
-                    {autocompleteSuggestion}
-                  </span>
-                </div>
-              </div>
-            )}
             <div className="relative">
               <Textarea
                 data-testid="multimodal-input"
@@ -748,7 +807,7 @@ function PureMultimodalInput({
                 onKeyDown={handleKeyDown}
                 style={{
                   height: `${textareaHeight}px`,
-                  maxHeight: 'calc(75dvh)',
+                  maxHeight: 'calc(60dvh)',
                   minHeight: '98px',
                 }}
                 className={cx(
@@ -759,13 +818,34 @@ function PureMultimodalInput({
                 rows={2}
                 autoFocus
               />
-              {/* Resize handle - invisible hover zone at top */}
-              <button
-                type="button"
-                className="absolute top-0 left-0 right-0 h-3 cursor-ns-resize z-10 hover:bg-gray-200/20 transition-colors bg-transparent border-none p-0"
-                onMouseDown={handleResizeStart}
-                aria-label="Drag to resize textarea"
-              />
+
+              {/* Accept/Reject buttons inside the text area */}
+              {isShowingSuggestion && autocompleteSuggestion && (
+                <div className="absolute bottom-2 left-2 flex flex-row gap-2">
+                  <Button
+                    data-testid="accept-suggestion-button"
+                    className="rounded-full px-4 py-2 h-fit text-sm bg-green-100 hover:bg-green-200 text-green-800 border border-green-300 dark:bg-green-900 dark:text-green-100 dark:border-green-700 dark:hover:bg-green-800"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      acceptAutocompleteSuggestion();
+                    }}
+                    variant="ghost"
+                  >
+                    ✓ Accept Enhanced Prompt
+                  </Button>
+                  <Button
+                    data-testid="revert-suggestion-button"
+                    className="rounded-full px-4 py-2 h-fit text-sm bg-red-100 hover:bg-red-200 text-red-800 border border-red-300 dark:bg-red-900 dark:text-red-100 dark:border-red-700 dark:hover:bg-red-800"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      revertAutocompleteSuggestion();
+                    }}
+                    variant="ghost"
+                  >
+                    ✗ Keep Original
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
